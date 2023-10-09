@@ -472,16 +472,13 @@ int main(int argc, char** argv) {
         }
         else {
             start_time = std::chrono::steady_clock::now();
-            int x = cutoffs[0] - solve(field_index, 0, hold, q, bag, cutoffs, boolean_mode ? 1 : cutoffs[0]);
+            int x = solve(field_index, 0, hold, q, bag, cutoffs, boolean_mode ? 1 : cutoffs[0]);
             end_time = std::chrono::steady_clock::now();
-            if (boolean_mode) {
-                x = !x;
-                cutoffs[0] = 1;
-            }
+            if (boolean_mode) cutoffs[0] = 1;
 
-            std::cerr << "Result: " << x << '/' << cutoffs.front() << "\nTime: ";
+            std::cerr << "Result: " << (cutoffs[0] - x) << '/' << cutoffs.front() << "\nTime: ";
             std::cerr << std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count() << " ms\n\n";
-            if (out_mode) std::cout << x << '\n';
+            if (out_mode) std::cout << (cutoffs[0] - x) << '\n';
         }
     }
 
