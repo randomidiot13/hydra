@@ -7,6 +7,8 @@ Hydra will not go for a 2-line PC, since it does not know of their existence. It
 
 ## Usage
 
+Download `graph.bin` from [here](https://drive.google.com/file/d/1XEYrDFhatN-McOcpTpWuAYq8ubyanJtq/view?usp=sharing) (Google Drive link). The file should be 510917451 bytes.
+
 Compile `hydra_solver.cpp` with your C++ compiler of choice.
 
     g++ -O3 -std=c++14 hydra_solver.cpp
