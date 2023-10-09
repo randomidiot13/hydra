@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <style>
+            a, button.link {
+              color: #08e
+            }
+            a:hover, button.link:hover {
+              color: #32cd32
+            }
+            a:visited {
+              color: #af69ef
+            }
+            a:after {
+              content: url(https://upload.wikimedia.org/wikipedia/commons/4/44/Icon_External_Link.svg);
+              margin: 0 0 0 3px;
+            }
+            button.link {
+              background: none!important;
+              border: none!important;
+              padding: 0!important;
+              font-family: sans-serif;
+              font-size: medium;
+              text-decoration: underline;
+              cursor: pointer
+            }
+            table.field {
+              margin-left: auto;
+              margin-right: auto;
+              table-layout: fixed
+            }
+            table.field td {
+              min-width: 14px;
+              padding-bottom: 15px
+            }
+            div.grid {
+              display: grid;
+              grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+              grid-gap: 1rem 0
+            }
+        </style>
+        <script type="text/javascript" src="main.js"></script>
+        <script type="text/javascript" src="tree_data.js"></script>
+    </head>
+    <body style="font-family:sans-serif" onload="disp_options(init_hash, data)">
+        <h1 style="text-align:center">Hydra Decision Tree Viewer</h1>
+        <div style="text-align:center;margin-bottom:20px">
+            <button class="link" onclick="disp_options(init_hash, data)">Reset</button> 
+        </div>
+        <br>
+        <div id="results" style="text-align:center;margin:auto;max-width:1400px"></div>
+        <p style="text-align:center;margin-top:50px">Click on the piece that is revealed (not the preview below it).</p>
+    </body>
+</html>
