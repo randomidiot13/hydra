@@ -37,9 +37,9 @@ The following command line arguments are supported. Combining multiple flags (e.
 
 * `-b`: Boolean mode. Returns either 0/1 or 1/1 depending on whether the PC is 100%. This speeds up all cases where at least one piece is hidden from the player at the start, at the downside of returning less precise information if the PC is not 100%. Incompatible with decision mode.
 * `-d`: Decision mode. Outputs an optimal decision tree to `tree_data.js`, which can be viewed by opening `tree_viewer.html`. Incompatible with boolean mode.
-* `-f [number]`: Starting field hash. `number` must be a 40-bit unsigned integer. The hash is explained in detail below.
+* `-f [number]`: Starting field hash. Defaults to 0 (the empty field). Must be a 40-bit unsigned integer. The hash is explained in detail below.
 * `-o`: Stdout mode. Echoes all numerical results to stdout. This is useful when running queues in batch and redirecting the raw results to a file.
-* `-s [number]`: See (held + active + previews). `number` must be an integer between 2 and 11 inclusive.
+* `-s [number]`: See (held + active + previews). Defaults to 7. This is the length of the first string given as input. Must be an integer between 2 and 11 inclusive.
 
 ## Field hash
 
