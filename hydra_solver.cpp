@@ -336,7 +336,7 @@ bool option_exists(char** begin, char**end, const std::string& option) {
 }
 
 int main(int argc, char** argv) {
-    std::ifstream graph("graph.bin");
+    std::ifstream graph("graph.bin", std::ios::binary);
     char* p;
 
     unsigned long long requested_hash = -1ull;
