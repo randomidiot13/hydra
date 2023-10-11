@@ -5,15 +5,20 @@
 #include <iostream>
 #include <set>
 #include <string>
-#include <unordered_set>
 #include <vector>
+
+#define MAJOR 0
+#define MINOR 2
+#define MICRO 20231011
 
 const int PTR_LENGTH = 3;
 const int HASH_LENGTH = 5;
 const int PIECE_SHAPES = 7;
 const int NUM_FIELDS = 15185706;
 const unsigned long long MAX_HASH = 0xFFFFFFFFFFull;
+const unsigned long long TWO_LINE_HASH = 0xFFFFFull;
 const std::string PIECE_ORDER = "IJLOSTZ";
+const std::set<int> FULL_BAG = {0, 1, 2, 3, 4, 5, 6};
 
 struct Node {
     unsigned long long hash;
@@ -32,7 +37,7 @@ struct Node {
         for (int shape = 0; shape < PIECE_SHAPES; shape++) {
             is.read(buffer, 1);
             n.edges[shape] = std::vector<int>(buffer[0]);
-            for (int i = 0; i < n.edges[shape].size(); i++) {
+            for (int i = 0; i < (int)n.edges[shape].size(); i++) {
                 is.read(buffer, PTR_LENGTH);
                 n.edges[shape][i] = 0;
                 for (int j = PTR_LENGTH - 1; j >= 0; j--) {
@@ -47,15 +52,16 @@ struct Node {
 
 std::vector<Node> fields(NUM_FIELDS);
 
-bool can_pc_hold(int field, int hold, std::deque<int>& pieces) {
+bool can_pc_hold(int field, int hold, std::deque<int>& pieces, bool two_line) {
     if (field == NUM_FIELDS - 1) return true;
+    if (two_line && fields[field].hash == TWO_LINE_HASH) return true;
     if (pieces.empty()) return false;
 
     bool ret = false;
     int front = pieces.front();
     pieces.pop_front();
     for (int f: fields[field].edges[front]) {
-        if (can_pc_hold(f, hold, pieces)) {
+        if (can_pc_hold(f, hold, pieces, two_line)) {
             ret = true;
             goto end;
         }
@@ -63,7 +69,7 @@ bool can_pc_hold(int field, int hold, std::deque<int>& pieces) {
 
     if (front != hold) {
         for (int f: fields[field].edges[hold]) {
-            if (can_pc_hold(f, front, pieces)) {
+            if (can_pc_hold(f, front, pieces, two_line)) {
                 ret = true;
                 goto end;
             }
@@ -77,13 +83,12 @@ bool can_pc_hold(int field, int hold, std::deque<int>& pieces) {
 
 int solve(
     int field, int placed, int hold, std::deque<int>& q,
-    std::set<int>& bag, std::vector<int>& cutoffs, int neg
+    std::set<int>& bag, std::vector<int>& cutoffs, int neg, bool two_line
 ) {
-    if (placed >= cutoffs.size() - 1) return !can_pc_hold(field, hold, q);
+    if (placed >= (int)cutoffs.size() - 1) return !can_pc_hold(field, hold, q, two_line);
+    if (two_line && fields[field].hash == TWO_LINE_HASH) return 0;
 
-    if (bag.empty()) {
-        for (int i = 0; i < PIECE_SHAPES; i++) bag.insert(i);
-    }
+    if (bag.empty()) bag = FULL_BAG;
 
     int front = q.front();
     q.pop_front();
@@ -96,7 +101,7 @@ int solve(
             wbag = bag;
             wbag.erase(p);
             q.push_back(p);
-            total += solve(f, placed+1, hold, q, wbag, cutoffs, neg - total);
+            total += solve(f, placed+1, hold, q, wbag, cutoffs, neg - total, two_line);
             q.pop_back();
             if (total >= neg) goto give_up_front;
         }
@@ -114,7 +119,7 @@ int solve(
                 wbag = bag;
                 wbag.erase(p);
                 q.push_back(p);
-                total += solve(f, placed+1, front, q, wbag, cutoffs, neg - total);
+                total += solve(f, placed+1, front, q, wbag, cutoffs, neg - total, two_line);
                 q.pop_back();
                 if (total >= neg) goto give_up_hold;
             }
@@ -177,7 +182,7 @@ struct Decision {
         }
         else {
             os << '[';
-            for (int i = 0; i < d->solve.size(); i++) {
+            for (int i = 0; i < (int)d->solve.size(); i++) {
                 if (i) os << ',';
                 os << '[' << fields[d->solve[i]->field].hash << ',' << d->solve[i]->piece << ']';
             }
@@ -247,11 +252,9 @@ Decision* generate_tree(
     int field, int placed, int hold, std::deque<int>& q,
     std::set<int>& bag, std::vector<int>& cutoffs, int neg
 ) {
-    if (placed >= cutoffs.size() - 1) return generate_pc_hold(field, hold, q);
+    if (placed >= (int)cutoffs.size() - 1) return generate_pc_hold(field, hold, q);
 
-    if (bag.empty()) {
-        for (int i = 0; i < PIECE_SHAPES; i++) bag.insert(i);
-    }
+    if (bag.empty()) bag = FULL_BAG;
 
     int front = q.front();
     q.pop_front();
@@ -336,7 +339,6 @@ bool option_exists(char** begin, char**end, const std::string& option) {
 }
 
 int main(int argc, char** argv) {
-    std::ifstream graph("graph.bin", std::ios::binary);
     char* p;
 
     unsigned long long requested_hash = -1ull;
@@ -366,20 +368,25 @@ int main(int argc, char** argv) {
     bool boolean_mode = option_exists(argv, argv + argc, "-b");
     bool decision_mode = option_exists(argv, argv + argc, "-d");
     bool out_mode = option_exists(argv, argv + argc, "-o");
+    bool two_line_mode = option_exists(argv, argv + argc, "-t");
     if (boolean_mode && decision_mode) {
         std::cerr << "Cannot combine -b and -d modes\n";
         return 1;
     }
+    if (decision_mode && two_line_mode) {
+        std::cerr << "Cannot combine -d and -t modes\n";
+        return 1;
+    }
 
-    std::cerr << "Loading graph\n";
+    std::cerr << "Hydra v" << MAJOR << '.' << MINOR << '.' << MICRO << "\nLoading graph" << std::flush;
+    std::ifstream graph("graph.bin", std::ios::binary);
     auto start_time = std::chrono::steady_clock::now();
     for (int i = 0; i < NUM_FIELDS; i++) {
         graph >> fields[i];
     }
     auto end_time = std::chrono::steady_clock::now();
-
-    std::cerr << "Loaded " << NUM_FIELDS << " fields in ";
-    std::cerr << std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count() << " ms\n";
+    std::cerr << " (took ";
+    std::cerr << std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count() << " ms)\n";
 
     int field_index = 0;
     if (requested_hash != -1ull) {
@@ -406,6 +413,7 @@ int main(int argc, char** argv) {
     if (boolean_mode) std::cerr << "Running boolean mode\n";
     if (decision_mode) std::cerr << "Running decision mode\n";
     if (out_mode) std::cerr << "Running stdout mode\n";
+    if (two_line_mode) std::cerr << "Running 2L mode\n";
     std::cerr << '\n';
 
     int hold;
@@ -418,9 +426,9 @@ int main(int argc, char** argv) {
         std::string s;
         std::cin >> s;
 
-        if (s.size() != see) break;
+        if ((int)s.size() != see) break;
         hold = PIECE_ORDER.find(s[0]);
-        if (hold == std::string::npos) {
+        if (hold == (int)std::string::npos) {
             std::cerr << "Invalid piece\n";
             return 1;
         }
@@ -428,7 +436,7 @@ int main(int argc, char** argv) {
         q.clear();
         for (int i = 1; i < see; i++) {
             int x = PIECE_ORDER.find(s[i]);
-            if (x == std::string::npos) {
+            if (x == (int)std::string::npos) {
                 std::cerr << "Invalid piece\n";
                 return 1;
             }
@@ -437,14 +445,32 @@ int main(int argc, char** argv) {
 
         std::string t;
         std::cin >> t;
-        bag.clear();
-        for (const char c: t) {
-            int x = PIECE_ORDER.find(c);
-            if (x == std::string::npos) {
-                std::cerr << "Invalid piece\n";
+        if (t.size() == 1 && '0' < t[0] && t[0] <= '7') {
+            int size = t[0] - '0';
+            if (size + see < PIECE_SHAPES) {
+                std::cerr << "Too few pieces to infer bag\n";
                 return 1;
             }
-            bag.insert(x);
+            bag = FULL_BAG;
+            for (int i = 0; i < PIECE_SHAPES - size; i++) {
+                int x = PIECE_ORDER.find(s[see + ~i]);
+                if (!bag.count(x)) {
+                    std::cerr << "Cannot infer bag from duplicate pieces\n";
+                    return 1;
+                }
+                bag.erase(x);
+            }
+        }
+        else {
+            bag.clear();
+            for (const char c: t) {
+                int x = PIECE_ORDER.find(c);
+                if (x == (int)std::string::npos) {
+                    std::cerr << "Invalid piece\n";
+                    return 1;
+                }
+                bag.insert(x);
+            }
         }
 
         cutoffs.back() = 1;
@@ -472,7 +498,7 @@ int main(int argc, char** argv) {
         }
         else {
             start_time = std::chrono::steady_clock::now();
-            int x = solve(field_index, 0, hold, q, bag, cutoffs, boolean_mode ? 1 : cutoffs[0]);
+            int x = solve(field_index, 0, hold, q, bag, cutoffs, boolean_mode ? 1 : cutoffs[0], two_line_mode);
             end_time = std::chrono::steady_clock::now();
             if (boolean_mode) cutoffs[0] = 1;
 
