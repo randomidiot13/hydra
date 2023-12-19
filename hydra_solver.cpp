@@ -1,15 +1,20 @@
 #include <algorithm>
+#include <array>
 #include <chrono>
+#include <cmath>
 #include <deque>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
+#include <map>
 #include <set>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #define MAJOR 0
-#define MINOR 2
-#define MICRO 20231011
+#define MINOR 3
+#define MICRO 20231218
 
 const int PTR_LENGTH = 3;
 const int HASH_LENGTH = 5;
@@ -19,6 +24,7 @@ const unsigned long long MAX_HASH = 0xFFFFFFFFFFull;
 const unsigned long long TWO_LINE_HASH = 0xFFFFFull;
 const std::string PIECE_ORDER = "IJLOSTZ";
 const std::set<int> FULL_BAG = {0, 1, 2, 3, 4, 5, 6};
+const double F = std::pow(2, -32);
 
 struct Node {
     unsigned long long hash;
@@ -52,40 +58,171 @@ struct Node {
 
 std::vector<Node> fields(NUM_FIELDS);
 
-bool can_pc_hold(int field, int hold, std::deque<int>& pieces, bool two_line) {
-    if (field == NUM_FIELDS - 1) return true;
-    if (two_line && fields[field].hash == TWO_LINE_HASH) return true;
-    if (pieces.empty()) return false;
+template<class T>
+T epsilon() {
+    return 1 - (T) (1 - F);
+}
 
-    bool ret = false;
+template<class T>
+struct Decision {
+    T prob;
+    T cap;
+    int field;
+    int piece;
+    bool is_solve;
+    Decision<T>* children[PIECE_SHAPES];
+
+    Decision(T neg, T cutoff, bool s) {
+        prob = neg;
+        cap = cutoff;
+        field = -1;
+        piece = -1;
+        is_solve = s;
+        for (int i = 0; i < PIECE_SHAPES; i++) children[i] = nullptr;
+    }
+
+    ~Decision() {
+        for (int i = 0; i < PIECE_SHAPES; i++) {
+            if (children[i]) delete children[i];
+        }
+    }
+};
+
+template<class T>
+std::ostream& operator<<(std::ostream& os, const Decision<T>* d) {
+    if (!d) {
+        os << "null";
+        return os;
+    }
+    if (!d->is_solve) {
+        if (d->prob < d->cap) {
+            os << '[' << fields[d->field].hash << ',' << d->piece << ',' << (d->prob/epsilon<T>()) << ",[";
+            for (int i = 0; i < PIECE_SHAPES; i++) {
+                if (i) os << ',';
+                os << d->children[i];
+            }
+            os << "]]";
+        }
+        else {
+            os << "[-1,-1," << d->cap << ']';
+        }
+    }
+    else {
+        os << "[[" << (d->prob/epsilon<T>()) << ']';
+        const Decision<T>* d2 = d;
+        while (d2) {
+            os << ",[" << fields[d2->field].hash << ',' << d2->piece << ']';
+            d2 = d2->children[0];
+        }
+        os << ']';
+    }
+    return os;
+}
+
+template<class T>
+T score_perfect_single(
+    int field, int hold, std::deque<int>& pieces, bool two_line,
+    const std::array<T, PIECE_SHAPES>& weights
+) {
+    if (field == NUM_FIELDS - 1) return weights[hold];
+    if (two_line && fields[field].hash == TWO_LINE_HASH) return 0;
+    if (pieces.empty()) return 1;
+
+    T min = 1;
     int front = pieces.front();
     pieces.pop_front();
     for (int f: fields[field].edges[front]) {
-        if (can_pc_hold(f, hold, pieces, two_line)) {
-            ret = true;
-            goto end;
+        T temp = score_perfect_single(f, hold, pieces, two_line, weights);
+        if (temp < min) {
+            min = temp;
+            if (!min) goto end;
         }
     }
 
     if (front != hold) {
         for (int f: fields[field].edges[hold]) {
-            if (can_pc_hold(f, front, pieces, two_line)) {
-                ret = true;
-                goto end;
+            T temp = score_perfect_single(f, front, pieces, two_line, weights);
+            if (temp < min) {
+                min = temp;
+                if (!min) goto end;
             }
         }
     }
 
     end:
     pieces.push_front(front);
-    return ret;
+    return min;
 }
 
-int solve(
-    int field, int placed, int hold, std::deque<int>& q,
-    std::set<int>& bag, std::vector<int>& cutoffs, int neg, bool two_line
+template<class T>
+T score_perfect_multiple(
+    int field, int hold, std::deque<int>& pieces, bool two_line,
+    const std::map<int, std::array<T, PIECE_SHAPES>>& weights, std::map<int, T>& options
 ) {
-    if (placed >= (int)cutoffs.size() - 1) return !can_pc_hold(field, hold, q, two_line);
+    if (two_line && fields[field].hash == TWO_LINE_HASH) options.clear();
+    if (options.empty()) return 0;
+
+    int front = pieces.front();
+
+    if (pieces.empty()) {
+        if (!fields[field].edges[hold].empty()) {
+            auto itr = options.begin();
+            while (itr != options.end()) {
+                itr->second = std::min(itr->second, weights.at(itr->first)[itr->first]);
+                if (itr->second) itr++;
+                else itr = options.erase(itr);
+            }
+        }
+
+        auto itr = options.begin();
+        while (itr != options.end()) {
+            if (!fields[field].edges[itr->first].empty()) {
+                itr->second = std::min(itr->second, weights.at(itr->first)[hold]);
+                if (itr->second) itr++;
+                else itr = options.erase(itr);
+            }
+            else itr++;
+        }
+
+        goto ret;
+    }
+
+    pieces.pop_front();
+    for (int f: fields[field].edges[front]) {
+        if (!score_perfect_multiple(f, hold, pieces, two_line, weights, options)) goto end_push;
+    }
+
+    if (front != hold) {
+        for (int f: fields[field].edges[hold]) {
+            if (!score_perfect_multiple(f, front, pieces, two_line, weights, options)) goto end_push;
+        }
+    }
+
+    end_push:
+    pieces.push_front(front);
+    ret:
+    T sum = 0;
+    for (const std::pair<int, T>& p: options) sum += p.second;
+    return sum;
+}
+
+template<class T>
+T score_imperfect(
+    int field, int hold, std::deque<int>& q, bool two_line,
+    int placed, T neg, std::set<int>& bag, std::vector<T>& cutoffs,
+    std::map<std::string, std::array<T, PIECE_SHAPES>>& weights
+) {
+    if (placed >= (int)cutoffs.size() - 1) {
+        std::string s = "";
+        for (int p: bag) {
+            s += "IJLOSTZ"[p];
+        }
+        auto itr = weights.find(s);
+        if (itr == weights.end()) {
+            itr = weights.find("default");
+        }
+        return score_perfect_single(field, hold, q, two_line, itr->second);
+    }
     if (two_line && fields[field].hash == TWO_LINE_HASH) return 0;
 
     if (bag.empty()) bag = FULL_BAG;
@@ -94,14 +231,50 @@ int solve(
     q.pop_front();
     std::set<int> wbag;
     neg = std::min(neg, cutoffs[placed]);
+
+    if (placed == (int)cutoffs.size() - 2) {
+        std::map<int, std::array<T, PIECE_SHAPES>> weight_map;
+        for (int p: bag) {
+            wbag = bag;
+            wbag.erase(p);
+            std::string s = "";
+            for (int piece: wbag) {
+                s += "IJLOSTZ"[piece];
+            }
+            auto itr = weights.find(s);
+            if (itr == weights.end()) {
+                itr = weights.find("default");
+            }
+            weight_map[p] = itr->second;
+        }
+
+        std::map<int, T> options;
+        for (int p: bag) options[p] = cutoffs[placed + 1];
+
+        for (int f: fields[field].edges[front]) {
+            std::map<int, T> woptions = options;
+            neg = std::min(neg, score_perfect_multiple(f, hold, q, two_line, weight_map, woptions));
+            if (!neg) goto success;
+        }
+
+        if (front != hold) {
+            for (int f: fields[field].edges[hold]) {
+                std::map<int, T> woptions = options;
+                neg = std::min(neg, score_perfect_multiple(f, front, q, two_line, weight_map, woptions));
+                if (!neg) goto success;
+            }
+        }
+
+        goto success;
+    }
     
     for (int f: fields[field].edges[front]) {
-        int total = 0;
+        T total = 0;
         for (int p: bag) {
             wbag = bag;
             wbag.erase(p);
             q.push_back(p);
-            total += solve(f, placed+1, hold, q, wbag, cutoffs, neg - total, two_line);
+            total += score_imperfect(f, hold, q, two_line, placed+1, neg - total, wbag, cutoffs, weights);
             q.pop_back();
             if (total >= neg) goto give_up_front;
         }
@@ -114,12 +287,12 @@ int solve(
     
     if (front != hold) {
         for (int f: fields[field].edges[hold]) {
-            int total = 0;
+            T total = 0;
             for (int p: bag) {
                 wbag = bag;
                 wbag.erase(p);
                 q.push_back(p);
-                total += solve(f, placed+1, front, q, wbag, cutoffs, neg - total, two_line);
+                total += score_imperfect(f, front, q, two_line, placed+1, neg - total, wbag, cutoffs, weights);
                 q.pop_back();
                 if (total >= neg) goto give_up_hold;
             }
@@ -136,180 +309,130 @@ int solve(
     return neg;
 }
 
-struct Decision {
-    int prob;
-    int field;
-    int piece;
-    int cap;
-    Decision* children[PIECE_SHAPES];
-    std::vector<Decision*> solve;
-
-    Decision(int neg, int cutoff) {
-        prob = neg;
-        field = -1;
-        piece = -1;
-        cap = cutoff;
-        solve = {};
-        for (int i = 0; i < PIECE_SHAPES; i++) children[i] = nullptr;
-    }
-
-    ~Decision() {
-        for (int i = 0; i < PIECE_SHAPES; i++) {
-            if (children[i]) delete children[i];
-        }
-        for (Decision* d: solve) {
-            if (d) delete d;
-        }
-    }
-
-    friend std::ostream& operator<<(std::ostream& os, const Decision* d) {
-        if (!d) {
-            os << "null";
-            return os;
-        }
-        if (d->solve.empty()) {
-            if (d->prob < d->cap) {
-                os << '[' << fields[d->field].hash << ',' << d->piece << ',' << d->prob << ",[";
-                for (int i = 0; i < PIECE_SHAPES; i++) {
-                    if (i) os << ',';
-                    os << d->children[i];
-                }
-                os << "]]";
-            }
-            else {
-                os << "[-1,-1," << d->cap << ']';
-            }
-        }
-        else {
-            os << '[';
-            for (int i = 0; i < (int)d->solve.size(); i++) {
-                if (i) os << ',';
-                os << '[' << fields[d->solve[i]->field].hash << ',' << d->solve[i]->piece << ']';
-            }
-            os << ']';
-        }
-        return os;
-    }
-};
-
-bool generate_pc_hold_inner(
-    int field, int hold, std::deque<int>& pieces, std::vector<Decision*>& hist
+template<class T>
+void tree_perfect_single(
+    int field, int hold, std::deque<int>& pieces,
+    Decision<T>* prev, const std::array<T, PIECE_SHAPES>& weights
 ) {
-    if (field == NUM_FIELDS - 1) return true;
-    if (pieces.empty()) return false;
+    if (pieces.empty()) {
+        prev->prob = weights[hold];
+        return;
+    }
 
-    bool ret = false;
+    Decision<T>* min = new Decision<T>(prev->prob, 1, true);
     int front = pieces.front();
     pieces.pop_front();
+
     for (int f: fields[field].edges[front]) {
-        Decision* d = new Decision(1, 1);
+        Decision<T>* d = new Decision<T>(min->prob, 1, true);
         d->field = f;
         d->piece = front;
-        hist.push_back(d);
-        if (generate_pc_hold_inner(f, hold, pieces, hist)) {
-            ret = true;
-            d->prob = 0;
-            goto end;
-        }
-        else {
-            hist.pop_back();
+        tree_perfect_single(f, hold, pieces, d, weights);
+        if (d->prob >= min->prob) {
             delete d;
+            continue;
         }
+        delete min;
+        min = d;
+        if (!(min->prob)) goto success;
     }
 
     if (front != hold) {
         for (int f: fields[field].edges[hold]) {
-            Decision* d = new Decision(1, 1);
+            Decision<T>* d = new Decision<T>(min->prob, 1, true);
             d->field = f;
             d->piece = hold;
-            hist.push_back(d);
-            if (generate_pc_hold_inner(f, front, pieces, hist)) {
-                ret = true;
-                d->prob = 0;
-                goto end;
-            }
-            else {
-                hist.pop_back();
+            tree_perfect_single(f, front, pieces, d, weights);
+            if (d->prob >= min->prob) {
                 delete d;
+                continue;
             }
+            delete min;
+            min = d;
+            if (!(min->prob)) goto success;
         }
     }
 
-    end:
+    success:
     pieces.push_front(front);
-    return ret;
+    prev->prob = min->prob;
+    prev->children[0] = min;
 }
 
-Decision* generate_pc_hold(int field, int hold, std::deque<int>& pieces) {
-    std::vector<Decision*> hist;
-    bool b = generate_pc_hold_inner(field, hold, pieces, hist);
-    Decision* d = new Decision(!b, 1);
-    d->solve = hist;
-    return d;
-}
-
-Decision* generate_tree(
-    int field, int placed, int hold, std::deque<int>& q,
-    std::set<int>& bag, std::vector<int>& cutoffs, int neg
+template<class T>
+Decision<T>* tree_imperfect(
+    int field, int hold, std::deque<int>& q,
+    int placed, T neg, std::set<int>& bag, std::vector<T>& cutoffs,
+    std::map<std::string, std::array<T, PIECE_SHAPES>>& weights
 ) {
-    if (placed >= (int)cutoffs.size() - 1) return generate_pc_hold(field, hold, q);
+    if (placed >= (int)cutoffs.size() - 1) {
+        std::string s = "";
+        for (int p: bag) {
+            s += "IJLOSTZ"[p];
+        }
+        auto itr = weights.find(s);
+        if (itr == weights.end()) {
+            itr = weights.find("default");
+        }
+        Decision<T>* d = new Decision<T>(std::min((T)1, neg), 1, true);
+        tree_perfect_single(field, hold, q, d, itr->second);
+        Decision<T>* d2 = d->children[0];
+        d->children[0] = nullptr;
+        delete d;
+        if (d2->field == -1) d2->is_solve = false;
+        return d2;
+    }
 
     if (bag.empty()) bag = FULL_BAG;
 
     int front = q.front();
     q.pop_front();
-    Decision* min = new Decision(std::min(neg, cutoffs[placed]), cutoffs[placed]);
+    Decision<T>* min = new Decision<T>(std::min(neg, cutoffs[placed]), cutoffs[placed], false);
     std::set<int> wbag;
 
     for (int f: fields[field].edges[front]) {
-        Decision* d = new Decision(0, cutoffs[placed]);
+        Decision<T>* d = new Decision<T>(0, cutoffs[placed], false);
         d->field = f;
         d->piece = front;
         for (int p: bag) {
             wbag = bag;
             wbag.erase(p);
             q.push_back(p);
-            Decision* d2 = generate_tree(f, placed+1, hold, q, wbag, cutoffs, min->prob - d->prob);
+            Decision<T>* d2 = tree_imperfect(f, hold, q, placed+1, min->prob - d->prob, wbag, cutoffs, weights);
             d->children[p] = d2;
             d->prob += d2->prob;
             q.pop_back();
-            if (d->prob >= min->prob) goto give_up_front;
+            if (d->prob >= min->prob) break;
         }
         if (d->prob < min->prob) {
             delete min;
             min = d;
             if (!(d->prob)) goto success;
         }
-        else {
-            give_up_front:
-            delete d;
-        }
+        else delete d;
     }
     
     if (front != hold) {
         for (int f: fields[field].edges[hold]) {
-            Decision* d = new Decision(0, cutoffs[placed]);
+            Decision<T>* d = new Decision<T>(0, cutoffs[placed], false);
             d->field = f;
             d->piece = hold;
             for (int p: bag) {
                 wbag = bag;
                 wbag.erase(p);
                 q.push_back(p);
-                Decision* d2 = generate_tree(f, placed+1, front, q, wbag, cutoffs, min->prob - d->prob);
+                Decision<T>* d2 = tree_imperfect(f, front, q, placed+1, min->prob - d->prob, wbag, cutoffs, weights);
                 d->children[p] = d2;
                 d->prob += d2->prob;
                 q.pop_back();
-                if (d->prob >= min->prob) goto give_up_hold;
+                if (d->prob >= min->prob) break;
             }
             if (d->prob < min->prob) {
                 delete min;
                 min = d;
                 if (!(d->prob)) goto success;
             }
-            else {
-                give_up_hold:
-                delete d;
-            }
+            else delete d;
         }
     }
     
@@ -338,7 +461,8 @@ bool option_exists(char** begin, char**end, const std::string& option) {
     return std::find(begin, end, option) != end;
 }
 
-int main(int argc, char** argv) {
+template<class T>
+int inner_main(int argc, char** argv) {
     char* p;
 
     unsigned long long requested_hash = -1ull;
@@ -369,8 +493,15 @@ int main(int argc, char** argv) {
     bool decision_mode = option_exists(argv, argv + argc, "-d");
     bool out_mode = option_exists(argv, argv + argc, "-o");
     bool two_line_mode = option_exists(argv, argv + argc, "-t");
+    bool version_mode = option_exists(argv, argv + argc, "-v");
+    bool weighted_mode = option_exists(argv, argv + argc, "-w");
+
     if (boolean_mode && decision_mode) {
         std::cerr << "Cannot combine -b and -d modes\n";
+        return 1;
+    }
+    if (boolean_mode && weighted_mode) {
+        std::cerr << "Cannot combine -b and -w modes\n";
         return 1;
     }
     if (decision_mode && two_line_mode) {
@@ -378,7 +509,38 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    std::cerr << "Hydra v" << MAJOR << '.' << MINOR << '.' << MICRO << "\nLoading graph" << std::flush;
+    std::cerr << "Hydra v" << MAJOR << '.' << MINOR << '.' << MICRO << '\n';
+    if (version_mode) return 0;
+
+    std::map<std::string, std::array<T, PIECE_SHAPES>> weight_map;
+    weight_map["default"] = {0, 0, 0, 0, 0, 0, 0};
+    std::cerr << "Loading weights... " << std::flush;
+    std::ifstream weights("weights.txt");
+    for (int i = 1; i < (1 << PIECE_SHAPES); i++) {
+        std::string s;
+        weights >> s;
+        if (s == "null") s = "";
+        weight_map[s] = {};
+        for (int j = 0; j < PIECE_SHAPES; j++) {
+            long long x;
+            weights >> x;
+            if (x < 0 || x > 1/F) {
+                std::cerr << "\nWeights must be in the range [0, 2^32]\n";
+                return 1;
+            }
+            weight_map[s][j] = x * epsilon<T>();
+        }
+    }
+    if (!weighted_mode) {
+        auto itr = weight_map.begin();
+        while (itr != weight_map.end()) {
+            if (itr->first == "default") itr++;
+            else itr = weight_map.erase(itr);
+        }
+    }
+    std::cerr << "\n";
+    
+    std::cerr << "Loading graph... " << std::flush;
     std::ifstream graph("graph.bin", std::ios::binary);
     auto start_time = std::chrono::steady_clock::now();
     for (int i = 0; i < NUM_FIELDS; i++) {
@@ -414,17 +576,58 @@ int main(int argc, char** argv) {
     if (decision_mode) std::cerr << "Running decision mode\n";
     if (out_mode) std::cerr << "Running stdout mode\n";
     if (two_line_mode) std::cerr << "Running 2L mode\n";
+    if (weighted_mode) std::cerr << "Running weighted mode\n";
     std::cerr << '\n';
 
     int hold;
     std::deque<int> q;
     std::set<int> bag;
-    std::vector<int> cutoffs(std::max(1, 12 - placed - see));
+
+    std::cerr << std::setprecision(19);
+    std::cout << std::setprecision(19);
 
     for (int count = 0; ; count++) {
+        std::vector<T> cutoffs(std::max(1, 12 - placed - see));
         std::cerr << "> ";
         std::string s;
         std::cin >> s;
+
+        if (s == "-f") {
+            std::cin >> requested_hash;
+            if (requested_hash >= MAX_HASH) {
+                std::cerr << "Invalid hash\n";
+                return 1;
+            }
+            field_index = hash_lookup(requested_hash);
+            if (field_index >= NUM_FIELDS || fields[field_index].hash != requested_hash) {
+                std::cerr << "Invalid hash\n";
+                return 1;
+            }
+            // can't use __builtin_popcount() for portability :(
+            popcount = 0;
+            for (long long i = 0; i < HASH_LENGTH * 8; i++) {
+                popcount += (fields[field_index].hash >> i) & 1;
+            }
+            if (popcount & 3) {
+                std::cerr << "Somehow not a multiple of 4 minos\n";
+                return 1;
+            }
+            placed = popcount / 4;
+            std::cerr << "Changed starting field to " << field_index << " (hash " << fields[field_index].hash << ")\n\n";
+            count--;
+            continue;
+        }
+
+        if (s == "-s") {
+            std::cin >> see;
+            if (see < 2 || see > 11) {
+                std::cerr << "Invalid see\n";
+                return 1;
+            }
+            std::cerr << "Changed see to " << see << "\n\n";
+            count--;
+            continue;
+        }
 
         if ((int)s.size() != see) break;
         hold = PIECE_ORDER.find(s[0]);
@@ -485,28 +688,52 @@ int main(int argc, char** argv) {
 
         if (decision_mode) {
             start_time = std::chrono::steady_clock::now();
-            Decision* d = generate_tree(field_index, 0, hold, q, bag, cutoffs, cutoffs[0]);
+            Decision<T>* d = tree_imperfect(field_index, hold, q, 0, cutoffs[0], bag, cutoffs, weight_map);
             end_time = std::chrono::steady_clock::now();
 
             std::ofstream fout("tree_data.js");
+            fout << std::setprecision(19);
             fout << "init_hash=" << fields[field_index].hash << '\n';
             fout << "data=" << d;
-            std::cerr << "Result: " << (cutoffs[0] - d->prob) << '/' << cutoffs.front() << "\nTime: ";
+            T result;
+            if (weighted_mode) {
+                result = d->prob / epsilon<T>();
+                std::cerr << "Result: " << result;
+            }
+            else {
+                result = cutoffs[0] - d->prob;
+                std::cerr << "Result: " << result << '/' << cutoffs[0];
+            }
+            std::cerr << "\nTime: ";
             std::cerr << std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count() << " ms\n\n";
-            if (out_mode) std::cout << (cutoffs[0] - d->prob) << '\n';
+            if (out_mode) std::cout << result << '\n';
             delete d;
         }
         else {
             start_time = std::chrono::steady_clock::now();
-            int x = solve(field_index, 0, hold, q, bag, cutoffs, boolean_mode ? 1 : cutoffs[0], two_line_mode);
+            T result = score_imperfect(field_index, hold, q, two_line_mode, 0, boolean_mode ? 1 : cutoffs[0], bag, cutoffs, weight_map);
             end_time = std::chrono::steady_clock::now();
+            
             if (boolean_mode) cutoffs[0] = 1;
-
-            std::cerr << "Result: " << (cutoffs[0] - x) << '/' << cutoffs.front() << "\nTime: ";
+            if (weighted_mode) {
+                result /= epsilon<T>();
+                std::cerr << "Result: " << result;
+            }
+            else {
+                result = cutoffs[0] - result;
+                std::cerr << "Result: " << result << '/' << cutoffs[0];
+            }
+            std::cerr << "\nTime: ";
             std::cerr << std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count() << " ms\n\n";
-            if (out_mode) std::cout << (cutoffs[0] - x) << '\n';
+            if (out_mode) std::cout << result << '\n';
         }
     }
 
     return 0;
+}
+
+int main(int argc, char** argv) {
+    bool weighted_mode = option_exists(argv, argv + argc, "-w");
+    if (weighted_mode) return (int)inner_main<double>(argc, argv);
+    else return inner_main<int>(argc, argv);
 }
