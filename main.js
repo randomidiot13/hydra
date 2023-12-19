@@ -225,9 +225,9 @@ function preview(prev_hash, obj) {
     }
     let f = new Field(prev_hash);
     f.clear_lines();
-    let f2 = new Field(obj[0][0]);
+    let f2 = new Field(obj[1][0]);
     f2.clear_lines();
-    let p = interpolate(f, f2, obj[0][1]);
+    let p = interpolate(f, f2, obj[1][1]);
     f.place(p);
     return f.disp();
 }
@@ -259,7 +259,7 @@ function disp_options(prev_hash, obj) {
                     PIECE_FIELDS[shape].disp(`disp_options(${obj[0]}, glob_array[${shape}])`) +
                     `<br>` +
                     preview(obj[0], obj[3][shape]) +
-                    `<p>${Array.isArray(obj[3][shape][0]) ? 0 : -obj[3][shape][2]}</div>`
+                    `<p>${Array.isArray(obj[3][shape][0]) ? -obj[3][shape][0][0] : -obj[3][shape][2]}</div>`
                 );
             }
             else {
@@ -278,7 +278,7 @@ function disp_options(prev_hash, obj) {
     }
     let r = prev_hash;
     let fields = [];
-    for (let x of obj) {
+    for (let x of obj.slice(1)) {
         let f1 = new Field(r);
         f1.clear_lines();
         let f2 = new Field(x[0]);
@@ -291,7 +291,7 @@ function disp_options(prev_hash, obj) {
     let f = new Field(prev_hash);
     f.clear_lines()
     document.getElementById("results").innerHTML = (
-        `${f.disp()}<p>1/1</p><br>` +
+        `${f.disp()}<p>${-obj[0][0]}</p><br>` +
         `<div class="grid">${fields.join("")}</div>`
     );
     return;
