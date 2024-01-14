@@ -7,7 +7,10 @@ Hydra's speed arises from the use of a pre-generated graph of all 4-line PC-able
 
 ## Usage
 
-Download `graph.bin` from [here](https://drive.google.com/file/d/1XEYrDFhatN-McOcpTpWuAYq8ubyanJtq/view?usp=sharing) (Google Drive link). The file should be 510917451 bytes.
+Download `graph.bin` from [here](https://drive.google.com/file/d/1XEYrDFhatN-McOcpTpWuAYq8ubyanJtq/view?usp=sharing) (Google Drive link). The file should be 510917451 bytes and have the following hashes:
+
+    MD5: 1490c9bd252d6bfa5c7d00518737be6b
+    SHA1: 3add9a11996e386db2482763344eb5062a745afa
 
 Compile `hydra_solver.cpp` with your C++ compiler of choice.
 
