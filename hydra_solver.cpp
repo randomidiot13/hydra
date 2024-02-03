@@ -16,7 +16,7 @@
 
 #define MAJOR 0
 #define MINOR 4
-#define MICRO 20240107
+#define MICRO 20240203
 
 const int PTR_LENGTH = 3;
 const int HASH_LENGTH = 5;
@@ -159,7 +159,7 @@ T score_perfect_single(
 ) {
     if (field == NUM_FIELDS - 1) return weights[hold];
     if (two_line && fields[field].hash == TWO_LINE_HASH) return 0;
-    if (pieces.empty()) return 1;
+    if (pieces.empty()) return 1 - weights.min;
 
     T min = 1 - weights.min;
     int front = pieces.front();
@@ -259,7 +259,7 @@ T score_imperfect(
 ) {
     if (placed >= (int)cutoffs.size() - 1) {
         std::string s = "";
-        for (int p: bag) s += "IJLOSTZ"[p];
+        for (int p: bag) s += PIECE_ORDER[p];
         auto itr = weights.find(s);
         if (itr == weights.end()) itr = weights.find("default");
         return score_perfect_single(field, hold, q, two_line, itr->second);
@@ -279,7 +279,7 @@ T score_imperfect(
             wbag = bag;
             wbag.erase(p);
             std::string s = "";
-            for (int piece: wbag) s += "IJLOSTZ"[piece];
+            for (int piece: wbag) s += PIECE_ORDER[piece];
             auto itr = weights.find(s);
             if (itr == weights.end()) itr = weights.find("default");
             weight_map[p] = itr->second;
@@ -413,7 +413,7 @@ void tree_perfect_single(
     Decision<T>* prev, const MinArray<T, PIECE_SHAPES>& weights,
     int job_num
 ) {
-    if (pieces.empty()) {
+    if (field == NUM_FIELDS - 1 || pieces.empty()) {
         prev->prob = weights[hold];
         return;
     }
@@ -478,7 +478,7 @@ Decision<T>* tree_imperfect(
 ) {
     if (placed >= (int)cutoffs.size() - 1) {
         std::string s = "";
-        for (int p: bag) s += "IJLOSTZ"[p];
+        for (int p: bag) s += PIECE_ORDER[p];
         auto itr = weights.find(s);
         if (itr == weights.end()) itr = weights.find("default");
         Decision<T>* d = new Decision<T>(std::min(1 - (itr->second).min, neg), 1 - (itr->second).min, true);
