@@ -18,7 +18,7 @@ Compile `hydra_solver.cpp` with your C++ compiler of choice.
 
 Invoking the resulting executable should lead to output similar to the following. Warning: by design, almost all Hydra output is located on `stderr`.
 
-    Hydra v0.4.20240107
+    Hydra v0.4.20240203
     Loading graph (took 3672 ms)
     Starting from field 0 (hash 0)
     Running see 7
